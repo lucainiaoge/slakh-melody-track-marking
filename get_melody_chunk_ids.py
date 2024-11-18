@@ -19,6 +19,10 @@ if __name__ == '__main__':
         help='The path to classifier sklearn model pipeline (pickle format)'
     )
     parser.add_argument(
+        '--slakh-has-subdir', type=bool, default=False,
+        help='In case the slakh folder has train-val-test split'
+    )
+    parser.add_argument(
         '--chunk-sec', type=float, default=10.0,
         help='The chunk duration in processing slakh dataset'
     )
@@ -31,38 +35,48 @@ if __name__ == '__main__':
     with open(args.model_path, 'rb') as f:
         pipeline = pickle.load(f)
 
+    if args.slakh_has_subdir:
+        base_dirs = [
+            os.path.join(args.slakh_dir, "train"),
+            os.path.join(args.slakh_dir, "validation"),
+            os.path.join(args.slakh_dir, "test"),
+        ]
+    else:
+        base_dirs = [args.slakh_dir]
+
     chunk_len = int(args.chunk_sec * PIANO_ROLL_SAMPLE_RATE)
-    slakh_pieces = os.listdir(args.slakh_dir)
-    for piece_folder in slakh_pieces:
-        track_dir = os.path.join(args.slakh_dir, piece_folder)
-        if (not os.path.isdir(track_dir)) or ("Track" not in str(piece_folder)):
-            continue
-        
-        midi_path = os.path.join(track_dir, "all_src.mid")
-        pretty_midi_features = pretty_midi.PrettyMIDI(midi_path)
-        track_features = get_track_features(pretty_midi_features)
-        
-        y_pred = pipeline.predict_proba(track_features)[:,1]
-        channel_pred = np.argmax(y_pred)
-        print(f"Predicted melody channel for {piece_folder}: {channel_pred}")
+    for base_dir in base_dirs:
+        slakh_pieces = os.listdir(args.slakh_dir)
+        for piece_folder in slakh_pieces:
+            track_dir = os.path.join(base_dir, piece_folder)
+            if (not os.path.isdir(track_dir)) or ("Track" not in str(piece_folder)):
+                continue
 
-        melody_piano_roll = pretty_midi_features.instruments[channel_pred].get_piano_roll(fs=PIANO_ROLL_SAMPLE_RATE)
-        melody_energy_vec = melody_piano_roll.sum(axis = 0)
-        average_energy = melody_energy_vec[melody_energy_vec > 0].mean()
-        min_energy = average_energy * args.melody_threshold
-        
-        num_chunks = int(len(melody_energy_vec) / chunk_len)
-        melody_chunk_ids = []
-        for i_chunk in range(num_chunks):
-            chunk_start = int(i_chunk * chunk_len)
-            this_chunk_vec = melody_energy_vec[chunk_start:chunk_start+chunk_len]
-            chunk_energy = this_chunk_vec.mean()
-            if chunk_energy > min_energy:
-                melody_chunk_ids.append(i_chunk)
-                
-        melody_chunk_json_filename = f"melody_chunks_ids_with_interval_{int(args.chunk_sec)}_sec.json"
-        melody_chunk_json_path = os.path.join(track_dir, melody_chunk_json_filename)
-        with open(melody_chunk_json_path, "w") as f:
-        	json.dump(melody_chunk_ids, f)
+            midi_path = os.path.join(track_dir, "all_src.mid")
+            pretty_midi_features = pretty_midi.PrettyMIDI(midi_path)
+            track_features = get_track_features(pretty_midi_features)
 
-        print(f"Assigned melody chunk ids: {melody_chunk_ids}; saved to json")
+            y_pred = pipeline.predict_proba(track_features)[:,1]
+            channel_pred = np.argmax(y_pred)
+            print(f"Predicted melody channel for {piece_folder}: {channel_pred}")
+
+            melody_piano_roll = pretty_midi_features.instruments[channel_pred].get_piano_roll(fs=PIANO_ROLL_SAMPLE_RATE)
+            melody_energy_vec = melody_piano_roll.sum(axis = 0)
+            average_energy = melody_energy_vec[melody_energy_vec > 0].mean()
+            min_energy = average_energy * args.melody_threshold
+
+            num_chunks = int(len(melody_energy_vec) / chunk_len)
+            melody_chunk_ids = []
+            for i_chunk in range(num_chunks):
+                chunk_start = int(i_chunk * chunk_len)
+                this_chunk_vec = melody_energy_vec[chunk_start:chunk_start+chunk_len]
+                chunk_energy = this_chunk_vec.mean()
+                if chunk_energy > min_energy:
+                    melody_chunk_ids.append(i_chunk)
+
+            melody_chunk_json_filename = f"melody_chunks_ids_with_interval_{int(args.chunk_sec)}_sec.json"
+            melody_chunk_json_path = os.path.join(track_dir, melody_chunk_json_filename)
+            with open(melody_chunk_json_path, "w") as f:
+                json.dump(melody_chunk_ids, f)
+
+            print(f"Assigned melody chunk ids: {melody_chunk_ids}; saved to json")
