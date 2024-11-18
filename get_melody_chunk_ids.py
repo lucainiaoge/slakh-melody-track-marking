@@ -46,7 +46,7 @@ if __name__ == '__main__':
 
     chunk_len = int(args.chunk_sec * PIANO_ROLL_SAMPLE_RATE)
     for base_dir in base_dirs:
-        slakh_pieces = os.listdir(args.slakh_dir)
+        slakh_pieces = os.listdir(base_dir)
         for piece_folder in slakh_pieces:
             track_dir = os.path.join(base_dir, piece_folder)
             if (not os.path.isdir(track_dir)) or ("Track" not in str(piece_folder)):
